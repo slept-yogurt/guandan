@@ -1,0 +1,14 @@
+# 依赖（本项目零第三方运行时依赖，仅测试可能用到 jsdom）
+node_modules/
+
+# 本地工作记忆 / 个人笔记 —— 绝不入库
+.workbuddy-ai/
+
+# 布局检查生成的截图
+shots/
+
+# 日志与临时文件
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db

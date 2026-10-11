@@ -1,0 +1,21 @@
+{
+  "name": "guandan",
+  "version": "1.0.0",
+  "private": true,
+  "description": "掼蛋网页游戏 —— 1-4 人联机、NPC 自动补位，网页前端 + Node.js + WebSocket，服务端权威发牌/同步/判定",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node tools/test-rules.js && node tools/test-game.js && node tools/test-ws.js && node tools/test-lifecycle.js && node tools/test-features.js",
+    "test:e2e": "node tools/e2e-test.js",
+    "test:layout": "node tools/layout-check.js",
+    "test:flow": "node tools/flow-check.js",
+    "test:spectate": "node tools/spectate-check.js",
+    "smoke": "node tools/smoke-live.js",
+    "test:all": "npm test && npm run test:e2e && npm run test:layout && npm run test:flow && npm run test:spectate",
+    "sim": "node tools/sim.js 400"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

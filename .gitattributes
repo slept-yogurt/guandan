@@ -1,0 +1,6 @@
+* text=auto eol=lf
+
+# 二进制/生成物（本项目目前没有，留作约定）
+*.png binary
+*.jpg binary
+*.ico binary

@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>掼蛋 · 联机对战</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🃏</text></svg>">
+</head>
+<body>
+
+<div id="connbar" class="connbar hidden"><span id="connbarText">连接断开，正在重连…</span></div>
+
+<!-- 服务端版本不匹配的警告条。放在最底部，和顶部的连接条不打架，
+     而且不会盖住牌桌的操作区。 -->
+<div id="stalebar" class="stalebar hidden">
+  <span id="staleText">服务端版本过旧</span>
+  <button id="btnStaleClose" class="btn tiny ghost">知道了</button>
+</div>
+
+<!-- 被顶号的提示条：这个会话已经在另一个页面（典型是"复制标签页"）里用了。
+     这时**不能自动重连**，否则两个页面会互相抢 token、无限顶号。
+     给用户一个明确的出口：要么关掉这个页面，要么在这里把会话抢回来。 -->
+<div id="replacedbar" class="stalebar hidden">
+  <span id="replacedText">这个会话已在另一个页面打开</span>
+  <button id="btnReclaim" class="btn tiny">在此页面继续</button>
+</div>
+
+<!-- ============================== 大厅 ============================== -->
+<section id="viewLobby" class="view">
+  <div class="lobby">
+    <header class="brand">
+      <h1>掼 蛋</h1>
+      <p class="sub">1–4 人联机 · 人不够自动补 NPC · 服务端权威发牌与判定</p>
+    </header>
+
+    <div class="panel">
+      <label class="field">
+        <span>你的昵称</span>
+        <input id="nameInput" maxlength="12" placeholder="随便起个名字" autocomplete="off">
+      </label>
+
+      <!-- 建房选项：起始级牌 + 是否允许观战。快速匹配用不到，单人开局会沿用这里的设置 -->
+      <div class="opts">
+        <label class="opt">
+          <span>起始级牌</span>
+          <select id="levelSelect" title="这一局从哪一级打起"></select>
+        </label>
+        <label class="opt check">
+          <input type="checkbox" id="optSpectate">
+          <span>允许观战</span>
+        </label>
+        <button id="btnSettingsLobby" class="btn tiny ghost" title="字号、手牌排序">⚙ 设置</button>
+      </div>
+
+      <div class="btn-row">
+        <button id="btnSolo" class="btn primary">单人开局（1 人 + 3 NPC）</button>
+        <button id="btnQuick" class="btn">快速匹配</button>
+      </div>
+      <div class="btn-row">
+        <button id="btnCreate" class="btn">创建房间</button>
+        <input id="joinInput" class="code-input" maxlength="6" inputmode="numeric" placeholder="房间号">
+        <button id="btnJoin" class="btn">加入</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>房间列表</h2>
+        <button id="btnRefresh" class="btn tiny">刷新</button>
+      </div>
+      <div id="roomList" class="room-list"><p class="muted">加载中…</p></div>
+    </div>
+
+    <details class="rules">
+      <summary>规则速览</summary>
+      <ul>
+        <li>两副牌 108 张，四人两两一队（对面是队友），每人 27 张。</li>
+        <li>当前「打几」＝上一局赢家一方的级牌；红桃级牌是<b>逢人配</b>，可替代除大小王外的任意牌。</li>
+        <li>牌型：单张 / 对子 / 三张 / 三带二 / 顺子 / 连对 / 钢板 / 炸弹 / 同花顺 / 四大天王。</li>
+        <li>炸弹大小：4 张炸 &lt; 5 张炸 &lt; 同花顺 &lt; 6 张炸 &lt; 7 张炸 &lt; … &lt; 四大天王。</li>
+        <li>升级：头游二游同队 +3，头游三游同队 +2，头游末游同队 +1；打到 A 并在 A 局获胜即赢下整场。</li>
+        <li>每局开始由上一局的末游向头游进贡最大牌（红桃级牌除外），头游还一张 ≤10 的牌。</li>
+      </ul>
+    </details>
+  </div>
+</section>
+
+<!-- ============================== 房间 ============================== -->
+<section id="viewRoom" class="view hidden">
+  <div class="lobby">
+    <header class="brand small">
+      <h1>房间 <span id="roomCode">----</span></h1>
+      <p class="sub">把房间号发给朋友，或者直接开始（空位由 NPC 补上）</p>
+    </header>
+    <div class="panel">
+      <div id="seatGrid" class="seat-grid"></div>
+      <div class="btn-row">
+        <button id="btnStart" class="btn primary">开始游戏</button>
+        <button id="btnLeave" class="btn ghost">离开房间</button>
+      </div>
+      <p id="roomHint" class="muted center"></p>
+      <p id="roomSpecHint" class="muted center hidden"></p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== 牌桌 ============================== -->
+<section id="viewTable" class="view hidden">
+  <div class="table-wrap">
+
+    <header class="topbar">
+      <div class="tb-left">
+        <span class="pill">第 <b id="tbRound">1</b> 局</span>
+        <span class="pill level">打 <b id="tbLevel">2</b></span>
+        <button class="pill room" id="tbRoomPill" title="点击复制房间号">房间 <b id="tbRoom">----</b></button>
+      </div>
+      <div class="tb-mid">
+        <span class="team team-a">A 队 <b id="tbTeamA">2</b></span>
+        <span class="team team-b">B 队 <b id="tbTeamB">2</b></span>
+      </div>
+      <div class="tb-right">
+        <button id="btnAuto" class="btn tiny">🙋<span class="lbl"> 托管</span></button>
+        <button id="btnSound" class="btn tiny">🔊<span class="lbl"> 提示音</span></button>
+        <button id="btnLog" class="btn tiny">记录</button>
+        <button id="btnChat" class="btn tiny">聊天</button>
+        <button id="btnSettings" class="btn tiny ghost">⚙<span class="lbl"> 设置</span></button>
+        <button id="btnQuit" class="btn tiny ghost">退出</button>
+      </div>
+    </header>
+
+    <div id="spectateBar" class="spectate-bar hidden">
+      <span id="spectateText">观战中</span>
+      <span class="muted">· 观战不能出牌</span>
+      <button id="btnExitSpectate" class="btn tiny ghost">退出观战</button>
+    </div>
+
+    <div class="board">
+      <div class="seat-slot slot-top" id="slotTop"></div>
+      <div class="seat-slot slot-left" id="slotLeft"></div>
+      <div class="seat-slot slot-right" id="slotRight"></div>
+
+      <div class="board-center" id="center">
+        <div class="center-turn" id="centerTurn"></div>
+        <div class="center-cards" id="centerCards"></div>
+      </div>
+
+      <div class="seat-slot slot-bottom" id="slotBottom"></div>
+    </div>
+
+    <div class="myarea">
+      <div class="mybar">
+        <span class="me-name" id="myName">我</span>
+        <span class="turn-hint" id="turnHint"></span>
+        <div class="mybtns">
+          <button id="btnHint" class="btn small">提示</button>
+          <button id="btnClear" class="btn small ghost">清空</button>
+          <button id="btnPass" class="btn small warn">不要</button>
+          <button id="btnPlay" class="btn small primary">出牌</button>
+        </div>
+      </div>
+      <div class="hand-scroll">
+        <div class="hand" id="hand"></div>
+      </div>
+    </div>
+
+    <aside class="logpane hidden" id="logPane">
+      <div class="panel-head"><h2>对局记录</h2><button id="btnLogClose" class="btn tiny ghost">收起</button></div>
+      <div class="log" id="logList"></div>
+    </aside>
+
+    <!-- 聊天面板：靠左，和右侧的「对局记录」错开，两个同时开也不打架。
+         消息来自服务端 room 广播里的 chats（最近 30 条）。 -->
+    <aside class="chatpane hidden" id="chatPane">
+      <div class="panel-head"><h2>聊天</h2><button id="btnChatClose" class="btn tiny ghost">收起</button></div>
+      <div class="chat" id="chatList"></div>
+      <div class="chat-form">
+        <input id="chatInput" maxlength="120" placeholder="说点什么…" autocomplete="off">
+        <button id="btnChatSend" class="btn small primary">发送</button>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ============================== 弹层 ============================== -->
+<div id="modal" class="modal-mask hidden">
+  <div class="modal">
+    <h2 id="modalTitle">提示</h2>
+    <div id="modalBody" class="modal-body"></div>
+    <div class="modal-foot">
+      <button id="modalCancel" class="btn ghost hidden">取消</button>
+      <button id="modalOk" class="btn primary">确定</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
