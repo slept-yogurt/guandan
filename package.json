@@ -6,14 +6,15 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
-    "test": "node tools/test-rules.js && node tools/test-game.js && node tools/test-ws.js && node tools/test-lifecycle.js && node tools/test-features.js",
+    "test": "node tools/test-rules.js && node tools/test-game.js && node tools/test-ws.js && node tools/test-lifecycle.js && node tools/test-features.js && node tools/test-ai.js",
     "test:e2e": "node tools/e2e-test.js",
     "test:layout": "node tools/layout-check.js",
     "test:flow": "node tools/flow-check.js",
     "test:spectate": "node tools/spectate-check.js",
     "smoke": "node tools/smoke-live.js",
     "test:all": "npm test && npm run test:e2e && npm run test:layout && npm run test:flow && npm run test:spectate",
-    "sim": "node tools/sim.js 400"
+    "sim": "node tools/sim.js 400",
+    "ai:metrics": "node tools/ai-metrics.js 400"
   },
   "engines": {
     "node": ">=18"
