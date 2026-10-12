@@ -20,7 +20,9 @@
  * 版本历史：
  *   v3 → v4：被顶号改用关闭码 4001（前端据此停止自动重连，避免两个页面互相抢 token），
  *            并修掉 `_resume` 里的同步重入（会把续连会话从 clients/byToken 里误删）。
+ *   v4 → v5：掉线不再立即托管 —— 宽限期内的座位仍归玩家（默认宽限改为 2 分钟），
+ *            到期后是否由 AI 托管由开局前的询问决定（`trusteeship` 字段）。
  */
-const PROTOCOL = 4;
+const PROTOCOL = 5;
 
 module.exports = { PROTOCOL };

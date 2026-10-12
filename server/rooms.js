@@ -59,6 +59,9 @@ class Client {
     this.watchSeat = -1;
     this.offline = false;
     this.graceTimer = null;
+    // 开局前弹窗询问的「掉线 2 分钟后是否由 AI 托管」（默认开）。
+    // 关掉后，掉线超过宽限期也不接管，座位一直等他回来。
+    this.trusteeship = true;
     // 兜底桶挡原始洪泛；放大桶只管会让服务端向其他人广播的消息
     this.flood = new Bucket(400, 150);
     this.amp = new Bucket(20, 5);
@@ -171,7 +174,9 @@ class Hub {
     this.rooms = new Map();
     this.clients = new Set();
     this.byToken = new Map();
-    this.graceMs = Number(process.env.WS_DISCONNECT_GRACE || opts.graceMs || 45000);
+    // 掉线宽限：默认 2 分钟。宽限期内座位**仍归玩家**，不托管、对局暂停等它回来；
+    // 只有宽限期到点、人还没回来，才由 NPC 接管（见 _expireGraceInner）。
+    this.graceMs = Number(process.env.WS_DISCONNECT_GRACE || opts.graceMs || 120000);
     this.npcDelay = opts.npcDelay != null ? opts.npcDelay : Number(process.env.NPC_DELAY || 800);
     // 一局结束后停顿一下再开下一局，让「第 N 局结束」的结果提示能被看见
     this.roundDelay = opts.roundDelay != null ? opts.roundDelay : Number(process.env.ROUND_DELAY || 2200);
@@ -329,12 +334,14 @@ class Hub {
     if (seatEntry) seatEntry.offline = true;
 
     const playing = room.game && (room.game.phase === 'play' || room.game.phase === 'tribute');
+    // 掉线**不立即托管**：宽限期内座位仍归玩家，先把 offline 标记亮给其他人看，
+    // 但不设 gs.auto —— 否则人一掉线 AI 就代打，与「2 分钟后才托管」的需求相反。
+    // 真正的托管发生在宽限期到点、人仍没回来时（_expireGraceInner）。
     if (playing) {
       const gs = room.game.seats[client.seat];
-      if (gs) { gs.auto = true; gs.offline = true; }
+      if (gs) { gs.offline = true; }
     }
     room.broadcast();
-    this._pump(room);
     client.graceTimer = setTimeout(() => this._expireGrace(client), this.graceMs);
     if (client.graceTimer.unref) client.graceTimer.unref();
     this.log('offline(grace ' + (playing ? 'playing' : 'waiting') + ') ' + client.name + ' room=' + room.id);
@@ -377,12 +384,20 @@ class Hub {
 
     const playing = room.game && (room.game.phase === 'play' || room.game.phase === 'tribute');
     if (playing) {
-      // 对局中：座位转为常驻托管，对局继续，人回来还能接管
+      // 对局中：宽限期到点、人还没回来。
+      // 玩家开局前若选了「掉线 2 分钟后由 AI 托管」，这里就把座位交给 AI 代打，
+      // 对局继续，人回来还能接管；没选（默认不托管）则保持暂停，等本人回来。
       const gs = room.game.seats[client.seat];
-      if (gs) { gs.auto = true; gs.offline = true; }
-      this.log('grace expired, auto-play seat ' + client.seat + ' in room ' + room.id);
-      room.broadcast();
-      this._pump(room);
+      if (gs && client.trusteeship) {
+        gs.auto = true;
+        gs.offline = true;
+        this.log('grace expired, auto-play seat ' + client.seat + ' in room ' + room.id);
+        room.broadcast();
+        this._pump(room);
+      } else {
+        this.log('grace expired, seat ' + client.seat + ' held (no trusteeship) in room ' + room.id);
+        room.broadcast();
+      }
       return;
     }
     // 还没开局：释放座位，避免僵尸座位堆积
@@ -424,6 +439,11 @@ class Hub {
 
   _dispatch(client, msg) {
     const room = client.roomId ? this.rooms.get(client.roomId) : null;
+    // 开局前弹窗询问的「掉线 2 分钟后是否托管」（需求）。
+    // 只要这次消息带了这个字段，就更新本会话的意愿；不带的（如 list/chat）不动。
+    if (msg.t === 'create' || msg.t === 'join' || msg.t === 'quick' || msg.t === 'solo') {
+      client.trusteeship = msg.trusteeship !== false;
+    }
     switch (msg.t) {
       case 'hello': {
         client.name = cleanName(msg.name) || client.name || '玩家';

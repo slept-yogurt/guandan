@@ -13,7 +13,7 @@ var NAME_KEY = 'guandan.name';
  * 结果是「界面上有这个按钮，点下去毫无反应，也不报错」—— 极难排查。
  * 现在对不上版本就直接挂一条红条说清楚。
  */
-var CLIENT_PROTOCOL = 4;
+var CLIENT_PROTOCOL = 5;
 
 /**
  * 服务端用来告诉前端「这个会话被新连接顶掉了」的关闭码（见 server/rooms.js 的 `_resume`）。
@@ -1088,19 +1088,39 @@ function bind() {
 
   fillLevelSelect();
 
-  $('btnSolo').addEventListener('click', function () { send({ t: 'solo', name: state.name, level: pickedLevel(), allowSpectate: pickedSpectate() }); });
-  $('btnQuick').addEventListener('click', function () { send({ t: 'quick', name: state.name }); });
-  $('btnCreate').addEventListener('click', function () { send({ t: 'create', name: state.name, level: pickedLevel(), allowSpectate: pickedSpectate() }); });
+  // 开局前弹窗：询问「掉线 2 分钟后是否由 AI 托管」。
+  // 三个入口（单人/创建/加入）都先问一次；房间列表的「加入」按钮同样走这里。
+  $('btnSolo').addEventListener('click', function () {
+    askTrusteeship(function (on) {
+      send({ t: 'solo', name: state.name, level: pickedLevel(), allowSpectate: pickedSpectate(), trusteeship: on });
+    });
+  });
+  $('btnQuick').addEventListener('click', function () {
+    askTrusteeship(function (on) {
+      send({ t: 'quick', name: state.name, trusteeship: on });
+    });
+  });
+  $('btnCreate').addEventListener('click', function () {
+    askTrusteeship(function (on) {
+      send({ t: 'create', name: state.name, level: pickedLevel(), allowSpectate: pickedSpectate(), trusteeship: on });
+    });
+  });
   $('btnJoin').addEventListener('click', function () {
     var id = ($('joinInput').value || '').trim();
     if (!id) { toast('请输入房间号'); return; }
-    send({ t: 'join', roomId: id, name: state.name });
+    askTrusteeship(function (on) {
+      send({ t: 'join', roomId: id, name: state.name, trusteeship: on });
+    });
   });
   $('btnRefresh').addEventListener('click', function () { send({ t: 'list' }); });
 
   $('roomList').addEventListener('click', function (e) {
     var join = e.target.closest ? e.target.closest('[data-join]') : null;
-    if (join) { send({ t: 'join', roomId: join.getAttribute('data-join'), name: state.name }); return; }
+    if (join) {
+      var jid = join.getAttribute('data-join');
+      askTrusteeship(function (on) { send({ t: 'join', roomId: jid, name: state.name, trusteeship: on }); });
+      return;
+    }
     var spec = e.target.closest ? e.target.closest('[data-spectate]') : null;
     if (spec) { send({ t: 'spectate', roomId: spec.getAttribute('data-spectate'), name: state.name }); }
   });
@@ -1227,6 +1247,35 @@ function pickedLevel() {
 function pickedSpectate() {
   var cb = $('optSpectate');
   return !!(cb && cb.checked);
+}
+
+/**
+ * 开局前询问：掉线超过 2 分钟后，是否由 AI 托管代打。
+ * 不托管 = 座位一直等本人回来，对局暂停。
+ * 默认选「托管」（大多数人希望不用干等），并把上次选择记到 localStorage。
+ */
+function askTrusteeship(done) {
+  var defOn = loadBool('guandan.trusteeship', true);
+  showModal({
+    title: '掉线托管设置',
+    body:
+      '<p>如果你在对局中掉线，超过 <b>2 分钟</b>仍没回来，是否让 AI 接管你的牌继续打？</p>' +
+      '<label class="set-check">' +
+        '<input type="checkbox" id="optTrusteeship"' + (defOn ? ' checked' : '') + '>' +
+        '<span>掉线 2 分钟后由 AI 托管（不勾选则暂停等你回来）</span>' +
+      '</label>' +
+      '<p class="set-note muted">托管后只要你重新连回，随时可以拿回控制权。这个选择会记住，下次不再问。</p>',
+    ok: '开始游戏',
+    cancel: '取消',
+    onOk: function () {
+      var cb = $('optTrusteeship');
+      var on = !(cb && !cb.checked);
+      savePref('guandan.trusteeship', on ? '1' : '0');
+      closeModal();
+      done(on);
+    },
+    onCancel: function () { closeModal(); },
+  });
 }
 
 function copyText(text) {
